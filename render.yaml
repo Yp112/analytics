@@ -1,0 +1,60 @@
+# render.yaml
+# FINAL VERSION - Hybrid Approach
+# This blueprint creates the application and ClickHouse service.
+# It assumes you have MANUALLY created the PostgreSQL database named 'plausible-db'.
+
+services:
+  # ClickHouse Database (running in Docker)
+  - type: privateService
+    name: clickhouse-db
+    plan: starter # Free plan is not powerful enough for ClickHouse
+    image:
+      url: clickhouse/clickhouse-server:23.8
+    envVars:
+      - key: CLICKHOUSE_DB
+        value: plausible
+      - key: CLICKHOUSE_USER
+        value: plausible
+      - key: CLICKHOUSE_PASSWORD
+        generateValue: true
+    disks:
+      - name: clickhouse-data
+        mountPath: /var/lib/clickhouse
+        sizeGB: 10
+
+  # The Plausible Web Application
+  - type: web
+    name: plausible
+    plan: starter # Start with starter, upgrade for more traffic
+    env: elixir
+    buildCommand: |
+      mix local.rebar --force
+      mix local.hex --force
+      mix deps.get --only prod
+      mix deps.compile
+      npm install --prefix ./assets
+      npm run deploy --prefix ./assets
+      mix compile
+      mix phx.digest
+      mix ecto.setup
+    startCommand: "mix phx.server"
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromService:
+          type: psql
+          name: plausible-db # This links to the DB you created manually
+          property: internalConnectionString
+      - key: CLICKHOUSE_DATABASE_URL
+        fromService:
+          type: privateService
+          name: clickhouse-db
+          envVarKey: CLICKHOUSE_DATABASE_URL
+      - key: BASE_URL
+        sync: false # Set this manually after first deploy
+      - key: SECRET_KEY_BASE
+        sync: false # Set this manually after first deploy
+      - key: TOTP_ENCRYPTION_KEY
+        generateValue: true
+      - key: GEOLITE2_COUNTRY_DB_KEY
+        value: ""
