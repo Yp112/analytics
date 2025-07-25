@@ -1,0 +1,70 @@
+# render.yaml
+# Blueprint for deploying Plausible Analytics on Render.
+
+services:
+  # 1. PostgreSQL Database for Plausible
+  - name: plausible-db
+    type: psql
+    plan: free # Start with free, upgrade later if needed
+    psqlVersion: 14
+
+  # 2. ClickHouse Database (running in Docker)
+  - name: clickhouse-db
+    type: privateService
+    plan: starter # Free plan is not powerful enough for ClickHouse
+    image:
+      url: clickhouse/clickhouse-server:23.8 # Use a specific, stable version
+    envVars:
+      - key: CLICKHOUSE_DB
+        value: plausible
+      - key: CLICKHOUSE_USER
+        value: plausible
+      - key: CLICKHOUSE_PASSWORD
+        generateValue: true # Let Render generate a secure password
+    disks:
+      - name: clickhouse-data
+        mountPath: /var/lib/clickhouse
+        sizeGB: 10 # Start with 10GB, you can increase this later
+
+  # 3. The Plausible Web Application
+  - name: plausible
+    type: web
+    plan: starter # Start with starter, upgrade for more traffic
+    env: elixir
+    buildCommand: |
+      # Install dependencies
+      mix local.rebar --force
+      mix local.hex --force
+      mix deps.get --only prod
+      mix deps.compile
+      # Install assets
+      npm install --prefix ./assets
+      # Build assets
+      npm run deploy --prefix ./assets
+      # Compile app
+      mix compile
+      # Run Phoenix digest
+      mix phx.digest
+      # Set up the database
+      mix ecto.setup
+    startCommand: "mix phx.server"
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromService:
+          type: psql
+          name: plausible-db
+          property: connectionString
+      - key: CLICKHOUSE_DATABASE_URL
+        fromService:
+          type: privateService
+          name: clickhouse-db
+          envVarKey: CLICKHOUSE_DATABASE_URL # Render will construct this for us
+      - key: BASE_URL
+        sync: false # We will set this manually after the first deploy
+      - key: SECRET_KEY_BASE
+        sync: false # We will set this manually
+      - key: TOTP_ENCRYPTION_KEY
+        generateValue: true
+      - key: GEOLITE2_COUNTRY_DB_KEY
+        value: "" # Optional: Add MaxMind key for more accurate location data
