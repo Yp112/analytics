@@ -1,12 +1,12 @@
 # render.yaml
-# Blueprint for deploying Plausible Analytics on Render.
+# Blueprint for deploying Plausible Analytics on Render. (CORRECTED VERSION)
 
 services:
   # 1. PostgreSQL Database for Plausible
   - name: plausible-db
-    type: psql
+    type: postgres # <-- FIX: Changed from 'psql' to 'postgres'
     plan: free # Start with free, upgrade later if needed
-    psqlVersion: 14
+    postgresVersion: 14 # 'psqlVersion' is also corrected to 'postgresVersion'
 
   # 2. ClickHouse Database (running in Docker)
   - name: clickhouse-db
@@ -52,7 +52,7 @@ services:
     envVars:
       - key: DATABASE_URL
         fromService:
-          type: psql
+          type: postgres # <-- FIX: Changed from 'psql' to 'postgres'
           name: plausible-db
           property: connectionString
       - key: CLICKHOUSE_DATABASE_URL
