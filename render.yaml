@@ -1,16 +1,17 @@
 # render.yaml
-# Blueprint for deploying Plausible Analytics on Render. (CORRECTED VERSION)
+# Blueprint for deploying Plausible Analytics on Render.
+# This version uses the correct 'psql' type and ensures clean formatting.
 
 services:
   # 1. PostgreSQL Database for Plausible
-  - name: plausible-db
-    type: postgres # <-- FIX: Changed from 'psql' to 'postgres'
+  - type: psql
+    name: plausible-db
     plan: free # Start with free, upgrade later if needed
-    postgresVersion: 14 # 'psqlVersion' is also corrected to 'postgresVersion'
+    postgresVersion: 14
 
   # 2. ClickHouse Database (running in Docker)
-  - name: clickhouse-db
-    type: privateService
+  - type: privateService
+    name: clickhouse-db
     plan: starter # Free plan is not powerful enough for ClickHouse
     image:
       url: clickhouse/clickhouse-server:23.8 # Use a specific, stable version
@@ -27,44 +28,38 @@ services:
         sizeGB: 10 # Start with 10GB, you can increase this later
 
   # 3. The Plausible Web Application
-  - name: plausible
-    type: web
+  - type: web
+    name: plausible
     plan: starter # Start with starter, upgrade for more traffic
     env: elixir
     buildCommand: |
-      # Install dependencies
       mix local.rebar --force
       mix local.hex --force
       mix deps.get --only prod
       mix deps.compile
-      # Install assets
       npm install --prefix ./assets
-      # Build assets
       npm run deploy --prefix ./assets
-      # Compile app
       mix compile
-      # Run Phoenix digest
       mix phx.digest
-      # Set up the database
       mix ecto.setup
     startCommand: "mix phx.server"
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
         fromService:
-          type: postgres # <-- FIX: Changed from 'psql' to 'postgres'
+          type: psql
           name: plausible-db
           property: connectionString
       - key: CLICKHOUSE_DATABASE_URL
         fromService:
           type: privateService
           name: clickhouse-db
-          envVarKey: CLICKHOUSE_DATABASE_URL # Render will construct this for us
+          envVarKey: CLICKHOUSE_DATABASE_URL
       - key: BASE_URL
-        sync: false # We will set this manually after the first deploy
+        sync: false
       - key: SECRET_KEY_BASE
-        sync: false # We will set this manually
+        sync: false
       - key: TOTP_ENCRYPTION_KEY
         generateValue: true
       - key: GEOLITE2_COUNTRY_DB_KEY
-        value: "" # Optional: Add MaxMind key for more accurate location data
+        value: ""
