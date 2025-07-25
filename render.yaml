@@ -1,42 +1,43 @@
 # render.yaml
-# A robust blueprint for deploying Plausible Analytics on Render.
-# This file defines all necessary services in one place.
+# FINAL VERSION - Using the dedicated 'databases' block to resolve parsing issues.
 
-services:
-  # 1. PostgreSQL Database for application data (accounts, sites).
-  - type: psql
-    name: plausible-db
-    plan: free # The 'Free' plan is sufficient for starting out.
+# We explicitly define managed databases in their own section.
+databases:
+  - name: plausible-db
+    plan: free
     postgresVersion: 14
+    # The 'databaseName' and 'user' are automatically generated based on the service name,
+    # but we list them here for clarity.
+    databaseName: plausible_db
+    user: plausible_user
 
-  # 2. ClickHouse Database for high-volume event data.
-  # This runs in a Docker container as a Private Service.
+# All other services (web apps, background workers, Docker containers) go here.
+services:
+  # 1. ClickHouse Database (running in Docker)
   - type: privateService
     name: clickhouse-db
-    plan: starter # IMPORTANT: The 'Free' plan is not powerful enough. Use 'Starter' or higher.
+    plan: starter # IMPORTANT: The 'Free' plan is not powerful enough.
     image:
-      url: clickhouse/clickhouse-server:23.8 # Using a specific, stable version.
+      url: clickhouse/clickhouse-server:23.8
     disks:
       - name: clickhouse-data
         mountPath: /var/lib/clickhouse
-        sizeGB: 10 # Start with 10GB; can be increased later.
+        sizeGB: 10
     envVars:
       - key: CLICKHOUSE_DB
         value: plausible
       - key: CLICKHOUSE_USER
         value: plausible
       - key: CLICKHOUSE_PASSWORD
-        generateValue: true # Render will securely generate and manage this password.
+        generateValue: true
 
-  # 3. The Plausible Web Application.
+  # 2. The Plausible Web Application
   - type: web
     name: plausible
-    plan: starter # 'Starter' is recommended for production.
+    plan: starter
     env: elixir
     healthCheckPath: /api/health
     buildCommand: |
-      # This block runs during every build to prepare the app.
-      # It installs dependencies, builds assets, and prepares the database schema.
       mix local.rebar --force
       mix local.hex --force
       mix deps.get --only prod
@@ -48,23 +49,22 @@ services:
       mix ecto.setup
     startCommand: "mix phx.server"
     envVars:
-      # Link to the PostgreSQL database we defined above.
+      # This part still references the database using 'psql', which is correct for a 'fromService' link.
+      # The error was in defining a 'psql' type service, not referencing it.
       - key: DATABASE_URL
         fromService:
           type: psql
           name: plausible-db
           property: connectionString
-      # Link to the ClickHouse database.
       - key: CLICKHOUSE_DATABASE_URL
         fromService:
           type: privateService
           name: clickhouse-db
           envVarKey: CLICKHOUSE_DATABASE_URL
-      # These two variables MUST be set manually in the Render Dashboard after the first deploy.
+      # These must be set manually after the first deploy.
       - key: BASE_URL
         sync: false
       - key: SECRET_KEY_BASE
         sync: false
-      # This key is used for two-factor authentication and is generated automatically.
       - key: TOTP_ENCRYPTION_KEY
         generateValue: true
